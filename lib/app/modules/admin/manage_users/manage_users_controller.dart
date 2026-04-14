@@ -1,0 +1,183 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../../../services/api_service.dart';
+
+class ManageUsersController extends GetxController {
+  final _apiService = Get.find<ApiService>();
+
+  final RxList<Map<String, dynamic>> users = <Map<String, dynamic>>[].obs;
+  final RxList<Map<String, dynamic>> filteredUsers =
+      <Map<String, dynamic>>[].obs;
+  final RxBool isLoading = false.obs;
+
+  // Filters
+  final RxString selectedFilter = 'All'.obs;
+  final searchController = TextEditingController();
+
+  @override
+  void onInit() {
+    super.onInit();
+    loadUsers();
+  }
+
+  @override
+  void onClose() {
+    searchController.dispose();
+    super.onClose();
+  }
+
+  Future<void> loadUsers() async {
+    isLoading.value = true;
+    try {
+      final response = await _apiService.get('/Admin/users');
+
+      if (response.success && response.data != null) {
+        final List<dynamic> data = response.data;
+        users.value = data.map((item) => item as Map<String, dynamic>).toList();
+        filterUsers();
+      } else {
+        Get.snackbar('Error', 'Failed to load users');
+      }
+    } catch (e) {
+      print('Error loading users: $e');
+      Get.snackbar('Error', 'Network error occurred');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  void filterUsers() {
+    var result = users.toList();
+
+    // Role filter
+    if (selectedFilter.value != 'All') {
+      result =
+          result.where((user) => user['role'] == selectedFilter.value).toList();
+    }
+
+    // Search filter
+    if (searchController.text.isNotEmpty) {
+      final query = searchController.text.toLowerCase();
+      result = result.where((user) {
+        final name = (user['fullName'] ?? '').toLowerCase();
+        final email = (user['email'] ?? '').toLowerCase();
+        final regNum = (user['registrationNumber'] ?? '').toLowerCase();
+
+        return name.contains(query) ||
+            email.contains(query) ||
+            regNum.contains(query);
+      }).toList();
+    }
+
+    filteredUsers.value = result;
+  }
+
+  void updateSearch(String value) {
+    filterUsers();
+  }
+
+  void setFilter(String filter) {
+    selectedFilter.value = filter;
+    filterUsers();
+  }
+
+  Future<void> createUser(Map<String, dynamic> userData) async {
+    isLoading.value = true;
+    try {
+      // Backend expects proper JSON types
+      final response = await _apiService.post('/Admin/users', data: userData);
+
+      if (response.success) {
+        Get.snackbar(
+          'Success',
+          'User created successfully',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        loadUsers(); // Reload list
+      } else {
+        Get.snackbar(
+          'Error',
+          response.message,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+    } catch (e) {
+      print('Error creating user: $e');
+      Get.snackbar('Error', 'Failed to create user');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> updateUser(int id, Map<String, dynamic> userData) async {
+    isLoading.value = true;
+    try {
+      final response = await _apiService.put('/Admin/users/$id', data: userData);
+
+      if (response.success) {
+        Get.snackbar(
+          'Success',
+          'User updated successfully',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        loadUsers(); // Reload list
+      } else {
+        Get.snackbar(
+          'Error',
+          response.message,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      }
+    } catch (e) {
+      print('Error updating user: $e');
+      Get.snackbar('Error', 'Failed to update user');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> deleteUser(int id) async {
+    try {
+      final response = await _apiService.delete('/Admin/users/$id');
+
+      if (response.success) {
+        Get.snackbar(
+          'Success',
+          'User deleted successfully',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+        loadUsers(); // Reload list
+      } else {
+        Get.snackbar('Error', response.message);
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to delete user');
+    }
+  }
+
+  Future<void> toggleUserStatus(int id) async {
+    final user = users.firstWhere((u) => u['id'] == id, orElse: () => {});
+    if (user.isEmpty) return;
+
+    final updatedData = {
+      'fullName': user['fullName'], // Required field
+      'isActive': !(user['isActive'] ?? false),
+    };
+
+    await updateUser(id, updatedData);
+  }
+
+  Color getStatusColor(bool isActive) {
+    return isActive ? Colors.green : Colors.red;
+  }
+}

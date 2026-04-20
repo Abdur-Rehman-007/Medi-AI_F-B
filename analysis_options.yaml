@@ -1,0 +1,50 @@
+# This file configures the analyzer, which statically analyzes Dart code to
+# check for errors, warnings, and lints.
+#
+# The issues identified by the analyzer are surfaced in the UI of Dart-enabled
+# IDEs (https://dart.dev/tools#ides-and-editors). The analyzer can also be
+# invoked from the command line by running `flutter analyze`.
+
+# The following line activates a set of recommended lints for Flutter apps,
+# packages, and plugins designed to encourage good coding practices.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # Treat certain warnings as info to reduce noise
+    invalid_annotation_target: ignore
+    todo: ignore
+    deprecated_member_use: ignore
+    deprecated_member_use_from_same_package: ignore
+    unused_import: warning
+    unused_local_variable: warning
+    dead_code: warning
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "**/generated/**"
+
+linter:
+  rules:
+    # Disable common non-critical warnings
+    avoid_print: false  # Allow print statements for debugging
+    prefer_const_constructors: false  # Don't require const everywhere
+    prefer_const_literals_to_create_immutables: false
+    prefer_const_constructors_in_immutables: false
+    use_key_in_widget_constructors: false  # Don't require keys
+    avoid_unnecessary_containers: false
+    sized_box_for_whitespace: false
+    avoid_web_libraries_in_flutter: false
+    library_private_types_in_public_api: false
+    prefer_typing_uninitialized_variables: false
+    constant_identifier_names: false  # Allow UPPER_CASE constants
+    non_constant_identifier_names: false
+    file_names: false  # Don't enforce snake_case file names
+    prefer_final_fields: false
+    unnecessary_late: false
+    prefer_if_null_operators: false
+    prefer_null_aware_operators: false
+    avoid_init_to_null: false
+
+# Additional information about this file can be found at
+# https://dart.dev/guides/language/analysis-options

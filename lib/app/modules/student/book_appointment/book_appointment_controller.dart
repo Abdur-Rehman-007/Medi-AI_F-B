@@ -1,0 +1,200 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:intl/intl.dart';
+import '../../../services/auth_service.dart';
+import '../../../services/api_service.dart';
+import 'package:medi_ai/config/app_config.dart';
+import '../dashboard/student_dashboard_controller.dart';
+
+class BookAppointmentController extends GetxController {
+  final _authService = Get.find<AuthService>();
+  final _apiService = Get.find<ApiService>();
+
+  final GlobalKey<FormState> formKey = GlobalKey<FormState>();
+
+  // Observables
+  final RxList<Map<String, dynamic>> doctors = <Map<String, dynamic>>[].obs;
+  final RxList<String> specializations = <String>[].obs;
+  final RxList<Map<String, dynamic>> availableSlots =
+      <Map<String, dynamic>>[].obs;
+
+  final RxBool isLoading = false.obs;
+  final RxBool isLoadingSlots = false.obs;
+
+  // Form Values
+  final Rx<String?> selectedSpecialization = Rx<String?>(null);
+  final Rx<String?> selectedDoctorId = Rx<String?>(null);
+  final Rx<DateTime?> selectedDate = Rx<DateTime?>(null);
+  // final Rx<TimeOfDay?> selectedTime = Rx<TimeOfDay?>(null);
+  final Rx<Map<String, dynamic>?> selectedSlot =
+      Rx<Map<String, dynamic>?>(null);
+
+  final symptomsController = TextEditingController();
+  final notesController = TextEditingController();
+
+  Map<String, dynamic>? get selectedDoctor {
+    if (selectedDoctorId.value == null) return null;
+    return doctors
+        .firstWhereOrNull((d) => d['id'].toString() == selectedDoctorId.value);
+  }
+
+  List<Map<String, dynamic>> get filteredDoctors {
+    if (selectedSpecialization.value == null) return doctors;
+    return doctors
+        .where((d) => d['specialization'] == selectedSpecialization.value)
+        .toList();
+  }
+
+  @override
+  void onInit() {
+    super.onInit();
+    loadDoctors();
+  }
+
+  Future<void> loadDoctors() async {
+    isLoading.value = true;
+    try {
+      final response =
+          await _apiService.get('${AppConfig.baseUrl}/Doctors/available');
+      if (response.success && response.data != null) {
+        final List<dynamic> data = response.data;
+        doctors.value =
+            data.map((item) => item as Map<String, dynamic>).toList();
+
+        final specs = doctors
+            .map((d) => d['specialization'] as String?)
+            .where((s) => s != null && s.isNotEmpty)
+            .toSet()
+            .toList();
+        specializations.value = specs.cast<String>();
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to load doctors: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  void onSpecializationChanged(String? value) {
+    selectedSpecialization.value = value;
+    selectedDoctorId.value = null;
+    selectedSlot.value = null;
+    availableSlots.clear();
+  }
+
+  void onDoctorChanged(String? doctorId) {
+    selectedDoctorId.value = doctorId;
+    selectedSlot.value = null;
+    availableSlots.clear();
+
+    if (doctorId != null && selectedDate.value != null) {
+      fetchAvailableSlots();
+    }
+  }
+
+  void onDateSelected(DateTime date) {
+    selectedDate.value = date;
+    selectedSlot.value = null;
+
+    if (selectedDoctorId.value != null) {
+      fetchAvailableSlots();
+    }
+  }
+
+  Future<void> fetchAvailableSlots() async {
+    if (selectedDoctorId.value == null || selectedDate.value == null) return;
+
+    isLoadingSlots.value = true;
+    try {
+      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate.value!);
+      final response = await _apiService.get(
+          '/Doctors/${selectedDoctorId.value}/available-slots',
+          queryParameters: {'date': dateStr});
+
+      if (response.success && response.data != null) {
+        final data = response.data as Map<String, dynamic>;
+        if (data['slots'] != null) {
+          final List<dynamic> slotsList = data['slots'];
+          availableSlots.value =
+              slotsList.map((s) => s as Map<String, dynamic>).toList();
+        } else {
+          availableSlots.clear();
+        }
+      } else {
+        availableSlots.clear();
+        if (response.message != "Doctor is not available on this day") {
+          Get.snackbar('Info', response.message);
+        }
+      }
+    } catch (e) {
+      print('Error fetching slots: $e');
+      availableSlots.clear();
+    } finally {
+      isLoadingSlots.value = false;
+    }
+  }
+
+  Future<void> bookAppointment() async {
+    if (!formKey.currentState!.validate()) return;
+
+    if (selectedDoctorId.value == null) {
+      Get.snackbar('Error', 'Please select a doctor');
+      return;
+    }
+    if (selectedDate.value == null) {
+      Get.snackbar('Error', 'Please select a date');
+      return;
+    }
+    if (selectedSlot.value == null) {
+      Get.snackbar('Error', 'Please select a time slot');
+      return;
+    }
+
+    isLoading.value = true;
+    try {
+      final currentUser = await _authService.getCurrentUser();
+
+      final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate.value!);
+      final timeStr = selectedSlot.value!['time']; // HH:mm
+      final dateTimeStr = '${dateStr}T$timeStr:00'; // ISO format
+
+      final appointmentData = {
+        'patientId': currentUser?.id.toString(),
+        'doctorId': selectedDoctorId.value,
+        'dateTime': dateTimeStr,
+        'symptoms': symptomsController.text,
+        'notes': notesController.text,
+        'status': 'Pending'
+      };
+
+      final response =
+          await _apiService.post('/Appointments', data: appointmentData);
+
+      if (response.success) {
+        // Refresh dashboards so the new appointment shows immediately
+        if (Get.isRegistered<StudentDashboardController>()) {
+          await Get.find<StudentDashboardController>().refresh();
+        }
+
+        Get.back();
+        Get.snackbar('Success', 'Appointment booked successfully',
+            backgroundColor: Colors.green,
+            colorText: Colors.white,
+            snackPosition: SnackPosition.BOTTOM);
+      } else {
+        Get.snackbar('Error', response.message);
+      }
+    } catch (e) {
+      Get.snackbar('Error', 'Failed to book appointment: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  @override
+  void onClose() {
+    symptomsController.dispose();
+    notesController.dispose();
+    super.onClose();
+  }
+}

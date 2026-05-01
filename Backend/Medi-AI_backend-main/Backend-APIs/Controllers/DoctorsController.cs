@@ -1014,6 +1014,7 @@ namespace Backend_APIs.Controllers
                         u.FullName,
                         u.Email,
                         u.PhoneNumber,
+                        u.RegistrationNumber,
                         u.Gender,
                         u.DateOfBirth,
                         u.ProfileImageUrl,

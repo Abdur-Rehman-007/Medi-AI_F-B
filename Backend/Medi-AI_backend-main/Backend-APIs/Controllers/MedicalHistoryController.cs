@@ -63,6 +63,83 @@ namespace Backend_APIs.Controllers
             }
         }
 
+        // GET: api/MedicalHistory/patient/{patientId}
+        [HttpGet("patient/{patientId:int}")]
+        [Authorize(Roles = "doctor,Doctor,admin,Admin")]
+        public async Task<ActionResult<ApiResponse<IEnumerable<MedicalHistoryDto>>>> GetPatientMedicalHistory(int patientId)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+                if (userIdClaim == null)
+                {
+                    return Unauthorized(new ApiResponse<object>
+                    {
+                        Success = false,
+                        Message = "Invalid token",
+                        Data = null,
+                        Errors = null
+                    });
+                }
+
+                var userId = int.Parse(userIdClaim.Value);
+                var isAdmin = User.IsInRole("admin") || User.IsInRole("Admin");
+
+                if (!isAdmin)
+                {
+                    var doctor = await _context.Doctors.FirstOrDefaultAsync(d => d.UserId == userId);
+                    if (doctor == null)
+                    {
+                        return NotFound(new ApiResponse<object>
+                        {
+                            Success = false,
+                            Message = "Doctor profile not found"
+                        });
+                    }
+
+                    var hasAccess = await _context.Appointments.AnyAsync(a =>
+                        a.DoctorId == doctor.Id && a.PatientId == patientId);
+
+                    if (!hasAccess)
+                    {
+                        return Forbid();
+                    }
+                }
+
+                var history = await _context.Medicalhistories
+                    .Where(m => m.PatientId == patientId)
+                    .OrderByDescending(m => m.DiagnosisDate)
+                    .ThenByDescending(m => m.CreatedAt)
+                    .ToListAsync();
+
+                var dtos = history.Select(m => new MedicalHistoryDto
+                {
+                    Id = m.Id,
+                    RecordType = m.RecordType,
+                    Title = m.Title,
+                    Description = m.Description,
+                    DiagnosisDate = m.DiagnosisDate?.ToString("yyyy-MM-dd"),
+                    Notes = m.Notes,
+                    CreatedAt = m.CreatedAt ?? DateTime.UtcNow
+                });
+
+                return Ok(new ApiResponse<IEnumerable<MedicalHistoryDto>>
+                {
+                    Success = true,
+                    Message = "Patient medical history retrieved successfully",
+                    Data = dtos
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiResponse<object>
+                {
+                    Success = false,
+                    Message = $"Error retrieving patient medical history: {ex.Message}"
+                });
+            }
+        }
+
         // POST: api/MedicalHistory
         [HttpPost]
         public async Task<ActionResult<ApiResponse<MedicalHistoryDto>>> CreateMedicalHistory(CreateMedicalHistoryDto request)

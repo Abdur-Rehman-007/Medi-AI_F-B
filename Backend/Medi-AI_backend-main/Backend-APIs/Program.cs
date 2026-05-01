@@ -15,10 +15,22 @@ namespace Backend_APIs
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            var railwayPort = Environment.GetEnvironmentVariable("PORT");
+            if (!string.IsNullOrWhiteSpace(railwayPort) &&
+                string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+            {
+                builder.WebHost.UseUrls($"http://0.0.0.0:{railwayPort}");
+            }
+
             // Add MySQL DbContext
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                throw new InvalidOperationException("ConnectionStrings:DefaultConnection is not configured.");
+            }
+
             builder.Services.AddDbContext<MediaidbContext>(options =>
-                options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+                options.UseMySql(connectionString, ServerVersion.Parse("8.0.36-mysql")));
 
             // Add Services
             builder.Services.AddScoped<IEmailService, EmailService>();
@@ -29,7 +41,13 @@ namespace Backend_APIs
 
             // Configure JWT Authentication
             var jwtSettings = builder.Configuration.GetSection("Jwt");
-            var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
+            var jwtKey = jwtSettings["Key"];
+            if (string.IsNullOrWhiteSpace(jwtKey))
+            {
+                throw new InvalidOperationException("Jwt:Key is not configured.");
+            }
+
+            var key = Encoding.UTF8.GetBytes(jwtKey);
 
             builder.Services.AddAuthentication(options =>
             {
@@ -143,7 +161,7 @@ namespace Backend_APIs
             });
 
             // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment())
+            if (app.Environment.IsDevelopment() || app.Configuration.GetValue<bool>("EnableSwagger"))
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
